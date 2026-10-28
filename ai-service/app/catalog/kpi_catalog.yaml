@@ -1,0 +1,284 @@
+# Phase 1 KPI catalog — workforce and recruitment only.
+# Definitions are copied from repo docs/DAX/SQL. Conflicts are recorded, not merged.
+# Sources are sample-data CSV files that exist in this repository.
+
+kpis:
+  - name: active_employees
+    display_name: Active Employees
+    category: workforce
+    unit: count
+    default_period: snapshot
+    definition: Distinct employees with is_active = true (termination_date is null after Silver cleansing).
+    definition_source: dax
+    dax_measure: Active Employees
+    sql_reference: vw_active_workforce (filters dim_employee.is_active = 1)
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: headcount
+    display_name: Headcount
+    category: workforce
+    unit: count
+    default_period: latest_month
+    definition: Distinct employees with is_month_end_active on the last month-end on or before as_of.
+    definition_source: dax
+    dax_measure: Headcount
+    sql_reference: vw_monthly_workforce_movement.closing_headcount
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - DAX uses LASTDATE(dim_date[date]) on the Direct Lake date table. This service has no dim_date table; it uses the last calendar month-end <= as_of that exists in the local snapshot.
+
+  - name: hires
+    display_name: Hires
+    category: workforce
+    unit: count
+    default_period: all
+    definition: Distinct employees flagged is_new_hire in fact_headcount_monthly for the requested period.
+    definition_source: dax
+    dax_measure: Hires
+    sql_reference: vw_monthly_workforce_movement.hires
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - DAX Hires respects Power BI filter context. This API uses period=all|rolling_12m|latest_month (default all).
+
+  - name: exits
+    display_name: Exits
+    category: workforce
+    unit: count
+    default_period: all
+    definition: Distinct employees flagged is_exit in fact_headcount_monthly for the requested period.
+    definition_source: dax
+    dax_measure: Exits
+    sql_reference: vw_monthly_workforce_movement.exits
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - DAX Exits respects Power BI filter context. This API uses period=all|rolling_12m|latest_month (default all).
+      - fact_exit row counts can differ from snapshot is_exit flags if exit dates fall outside snapshot construction.
+
+  - name: net_headcount_change
+    display_name: Net Headcount Change
+    category: workforce
+    unit: count
+    default_period: all
+    definition: Hires minus Exits for the same period.
+    definition_source: dax
+    dax_measure: Net Headcount Change
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: average_headcount
+    display_name: Average Headcount
+    category: workforce
+    unit: count
+    default_period: all
+    definition: Mean of monthly distinct employee_id counts in the headcount snapshot for the period.
+    definition_source: dax
+    dax_measure: Average Headcount
+    sql_reference: sql/02_h2r_kpi_queries.sql avg_headcount (AVG of monthly COUNT(*))
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - DAX AVERAGEX(VALUES(dim_date[month_start]), DISTINCTCOUNT(employee_id)) can include empty months from dim_date when that table is in filter context. This service averages only months present in the local snapshot (same idea as the SQL KPI query over fact_headcount_monthly).
+      - Snapshot COUNT(*) equals distinct employee_id per month because the Gold grain is employee x month-end.
+
+  - name: attrition_pct
+    display_name: Attrition %
+    category: workforce
+    unit: ratio
+    default_period: all
+    definition: Exits divided by Average Headcount for the period (DAX DIVIDE; not multiplied by 100).
+    definition_source: dax
+    dax_measure: Attrition %
+    dictionary_formula: Exits ÷ Average monthly headcount for the period
+    sql_reference: sql/02_h2r_kpi_queries.sql attrition_pct (annualised by fiscal_year, multiplied by 100)
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - Dictionary and DAX Attrition % use exits / average monthly headcount. This service follows that ratio (unit=ratio, not percent points).
+      - sql/01_gold_reporting_views.sql vw_monthly_workforce_movement.monthly_attrition_pct uses SUM(is_exit) / COUNT(*) * 100 for a single month, which is not average headcount and is not used here.
+      - sql/02_h2r_kpi_queries.sql reports attrition by fiscal_year as SUM(exits)*100/AVG(headcount). Phase 1 does not implement fiscal-year grouping.
+
+  - name: attrition_pct_rolling_12m
+    display_name: Attrition % (Rolling 12M)
+    category: workforce
+    unit: ratio
+    default_period: rolling_12m
+    definition: Exits / Average Headcount over the 12 calendar month-ends ending at as_of (DAX DIVIDE).
+    definition_source: dax
+    dax_measure: Attrition % (Rolling 12M)
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - DAX uses DATESINPERIOD on dim_date. This service uses the 12 month-ends from (as_of month-end minus 11 months) through as_of month-end.
+
+  - name: female_pct
+    display_name: Female %
+    category: workforce
+    unit: ratio
+    default_period: snapshot
+    definition: Active employees with standardised gender Female, divided by Active Employees.
+    definition_source: dax
+    dax_measure: Female %
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: avg_tenure_yrs
+    display_name: Avg Tenure (Yrs)
+    category: workforce
+    unit: years
+    default_period: snapshot
+    definition: Average tenure_years for active employees.
+    definition_source: dax
+    dax_measure: Avg Tenure (Yrs)
+    sources:
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - Silver uses Spark months_between(as_of_date, hire_date)/12 with as_of_date = coalesce(termination_date, current_date()). This service uses a pandas months_between approximation and as_of instead of the Fabric current_date().
+
+  - name: regrettable_exits
+    display_name: Regrettable Exits
+    category: workforce
+    unit: count
+    default_period: all
+    definition: Count of fact_exit rows with regrettable_flag = Y.
+    definition_source: dax
+    dax_measure: Regrettable Exits
+    sql_reference: sql/01_gold_reporting_views.sql vw_exit_analysis
+    sources:
+      - hris_exits.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - DAX COUNTROWS(fact_exit) is not filtered by date unless the report provides filter context. period=rolling_12m|latest_month filters last_working_date to the period; period=all does not.
+
+  - name: applicants
+    display_name: Applicants
+    category: recruitment
+    unit: count
+    default_period: all
+    definition: COUNTROWS of fact_recruitment (candidate applications after Silver de-duplication on candidate_id).
+    definition_source: dax
+    dax_measure: Applicants
+    sql_reference: vw_recruitment_funnel.applicants
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: offers
+    display_name: Offers
+    category: recruitment
+    unit: count
+    default_period: all
+    definition: fact_recruitment rows with is_offered (stage_order >= 4; Offered or Hired).
+    definition_source: dax
+    dax_measure: Offers
+    sql_reference: vw_recruitment_funnel.offered
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: candidates_hired
+    display_name: Candidates Hired
+    category: recruitment
+    unit: count
+    default_period: all
+    definition: fact_recruitment rows with current_stage = Hired (is_hired).
+    definition_source: dax
+    dax_measure: Candidates Hired
+    sql_reference: vw_recruitment_funnel.hired
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: offer_acceptance_pct
+    display_name: Offer Acceptance %
+    category: recruitment
+    unit: ratio
+    default_period: all
+    definition: Candidates Hired divided by Offers (DAX DIVIDE; dictionary Hired ÷ Offered).
+    definition_source: dax
+    dax_measure: Offer Acceptance %
+    dictionary_formula: Hired ÷ Offered
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - Offers uses is_offered (stage_order >= 4), not current_stage = Offered only. Hired is a subset of is_offered in the Gold notebook, so this matches dictionary Hired ÷ Offered when Offered means the offered+hired funnel step.
+
+  - name: applicant_to_hire_pct
+    display_name: Applicant to Hire %
+    category: recruitment
+    unit: ratio
+    default_period: all
+    definition: Candidates Hired divided by Applicants.
+    definition_source: dax
+    dax_measure: Applicant to Hire %
+    sql_reference: implied by vw_recruitment_funnel hired / applicants
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts: []
+
+  - name: avg_time_to_hire_days
+    display_name: Avg Time to Hire (Days)
+    category: recruitment
+    unit: days
+    default_period: all
+    definition: Average of non-null, non-negative hire_date minus applied_date durations (Gold time_to_hire_days). Negative durations are excluded and reported as data-quality issues.
+    definition_source: dax
+    dax_measure: Avg Time to Hire (Days)
+    dictionary_formula: Hire date − Applied date
+    sql_reference: vw_recruitment_funnel.avg_time_to_hire_days
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - time_to_hire_days is only populated when a silver employee row has candidate_id matching the candidate (Gold left join to hires). Unmatched Hired candidates contribute null and are omitted from AVERAGE, matching DAX AVERAGE skip-blank behaviour.
+
+  - name: avg_time_to_fill_days
+    display_name: Avg Time to Fill (Days)
+    category: recruitment
+    unit: days
+    default_period: all
+    definition: Average of hire_date minus requisition opened_date (Gold time_to_fill_days). Nulls are excluded from the mean.
+    definition_source: dax
+    dax_measure: Avg Time to Fill (Days)
+    dictionary_formula: Hire date − Requisition opened date
+    sources:
+      - ats_candidates.csv
+      - ats_requisitions.csv
+      - hris_employees.csv
+      - hris_departments.csv
+    conflicts:
+      - Same hire-link limitation as avg_time_to_hire_days.
