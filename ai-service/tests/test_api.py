@@ -115,3 +115,25 @@ def test_missing_sample_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     response = client.get("/kpis/active_employees")
     assert response.status_code == 503
     assert response.json()["detail"]["error"] == "sample_data_unavailable"
+
+
+
+def test_chat_accepts_as_of_and_period(client: TestClient):
+    response = client.post(
+        "/chat",
+        json={"question": "How many hires?", "as_of": "2024-12-31", "period": "all"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ok"
+    assert body["evidence"]["as_of"] == "2024-12-31"
+    assert body["evidence"]["period"] == "all"
+
+
+def test_chat_rejects_invalid_period(client: TestClient):
+    response = client.post(
+        "/chat",
+        json={"question": "How many hires?", "period": "weekly"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"]["error"] == "invalid_period"
