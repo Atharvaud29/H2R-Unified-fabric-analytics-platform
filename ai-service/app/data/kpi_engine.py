@@ -89,13 +89,47 @@ def _safe_divide(numerator: float | int, denominator: float | int) -> tuple[floa
     if denominator == 0:
         return None, True
     return float(numerator) / float(denominator), False
+def _month_spine(start: date, end: date) -> list[date]:
+    """Calendar month-ends from start month through end month, inclusive."""
+    months: list[date] = []
+    cursor = date(start.year, start.month, 1)
+    while cursor <= end:
+        months.append(month_end(cursor))
+        if cursor.month == 12:
+            cursor = date(cursor.year + 1, 1, 1)
+        else:
+            cursor = date(cursor.year, cursor.month + 1, 1)
+    return months
+
+
+def _missing_snapshot_note(filtered: pd.DataFrame, months: list[date]) -> str | None:
+    if not months:
+        return None
+    observed = {
+        pd.to_datetime(value).date()
+        for value in filtered["month_end"].dropna().unique().tolist()
+    } if not filtered.empty else set()
+    missing = [month.isoformat() for month in months if month not in observed]
+    if not missing:
+        return None
+    return (
+        "Missing monthly headcount snapshot(s): "
+        + ", ".join(missing)
+        + ". Average headcount uses observed months only; missing snapshots are not treated as zero."
+    )
+
+
 def _filter_headcount(gold: GoldTables, period: str) -> tuple[pd.DataFrame, list[date]]:
     hc = gold.headcount_monthly
     if hc.empty:
         return hc, []
     as_of_me = month_end(gold.as_of)
     if period == "all":
-        months = sorted(hc["month_end"].unique().tolist())
+        hc = hc.loc[pd.to_datetime(hc["month_end"]).dt.date <= as_of_me].copy()
+        if hc.empty:
+            return hc, []
+        first_month = min(pd.to_datetime(hc["month_end"]).dt.date)
+        months = _month_spine(first_month, as_of_me)
         return hc, months
     if period == "latest_month":
         months = [as_of_me]
@@ -152,6 +186,13 @@ def compute_kpi(name: str, gold: GoldTables, period: str | None = None) -> KpiRe
             gold.headcount_monthly["month_end"].unique().tolist()
         ) if not gold.headcount_monthly.empty else []
     notes: list[str] = []
+    if name in {
+        "hires", "exits", "net_headcount_change", "average_headcount",
+        "attrition_pct", "attrition_pct_rolling_12m",
+    }:
+        coverage_note = _missing_snapshot_note(hc, months)
+        if coverage_note:
+            notes.append(coverage_note)
     numerator: float | int | None = None
     denominator: float | int | None = None
     denom_zero = False
