@@ -142,3 +142,11 @@ def test_average_headcount_reports_missing_month_without_treating_it_as_zero(
         for note in result.notes
     )
 
+
+def test_all_period_attrition_contract(gold_with_controlled_months):
+    result = compute_kpi("attrition_pct", gold_with_controlled_months, period="all")
+    assert result.numerator == 3
+    assert result.denominator == pytest.approx(10.0)
+    assert result.value == pytest.approx(0.3)
+    assert result.unit == "ratio"
+    assert result.denominator_zero is False
