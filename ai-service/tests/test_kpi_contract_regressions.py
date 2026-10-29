@@ -13,7 +13,7 @@ from tests.test_kpi_engine import _write_min_csvs
 
 def _monthly_headcount_rows() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
-    months = pd.date_range("2023-12-31", "2024-12-31", freq="ME")
+    months = pd.date_range("2023-12-31", "2024-12-31", freq="M")
     for month in months:
         month_end = month.date()
         month_key = month.strftime("%Y%m")
