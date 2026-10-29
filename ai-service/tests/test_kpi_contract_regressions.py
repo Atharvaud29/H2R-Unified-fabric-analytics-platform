@@ -122,3 +122,23 @@ def test_latest_month_headcount_uses_as_of_month_end(gold_with_controlled_months
     assert result.value == 10
     assert result.period == "latest_month"
 
+
+def test_average_headcount_reports_missing_month_without_treating_it_as_zero(
+    gold_with_controlled_months,
+):
+    rows = _monthly_headcount_rows()
+    # Remove the entire May 2024 snapshot. The average remains over observed
+    # months only, but the result must disclose the missing calendar month.
+    rows = [row for row in rows if row["month_end"] != date(2024, 5, 31)]
+    gold_with_controlled_months.headcount_monthly = pd.DataFrame(rows)
+
+    result = compute_kpi(
+        "average_headcount", gold_with_controlled_months, period="all"
+    )
+
+    assert result.value == pytest.approx(10.0)
+    assert any(
+        "2024-05-31" in note and "not treated as zero" in note
+        for note in result.notes
+    )
+
