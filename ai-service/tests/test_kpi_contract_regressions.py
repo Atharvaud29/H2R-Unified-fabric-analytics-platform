@@ -176,3 +176,23 @@ def test_rolling_12m_attrition_reports_missing_month_snapshot(
         for note in result.notes
     )
 
+def test_headcount_reports_missing_latest_snapshot_as_unknown(
+    gold_with_controlled_months,
+):
+    rows = [
+        row
+        for row in _monthly_headcount_rows()
+        if row["month_end"] != date(2024, 12, 31)
+    ]
+    gold_with_controlled_months.headcount_monthly = pd.DataFrame(rows)
+
+    result = compute_kpi("headcount", gold_with_controlled_months)
+
+    assert result.value is None
+    assert result.numerator is None
+    assert result.period == "latest_month"
+    assert any(
+        "2024-12-31" in note and "not reported as zero" in note
+        for note in result.notes
+    )
+
