@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from functools import lru_cache
 from typing import Any
@@ -19,6 +20,7 @@ from app.data.csv_gold import (
     infer_as_of_from_value,
     load_gold,
     missing_source_files,
+    REQUIRED_FILES,
 )
 from app.data.kpi_engine import (
     InvalidPeriodError,
@@ -37,8 +39,21 @@ app = FastAPI(
 )
 
 
+def _source_fingerprint(sample_data_dir: str) -> str:
+    """Fingerprint required CSV contents so edits cannot leave stale cached KPIs."""
+    digest = hashlib.sha256()
+    root = __import__("pathlib").Path(sample_data_dir)
+    for filename in REQUIRED_FILES:
+        path = root / filename
+        digest.update(filename.encode("utf-8"))
+        with path.open("rb") as source:
+            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
 @lru_cache(maxsize=8)
-def _gold_cached(sample_data_dir: str, as_of_iso: str) -> GoldTables:
+def _gold_cached(sample_data_dir: str, as_of_iso: str, source_fingerprint: str) -> GoldTables:
     from datetime import date as date_cls
 
     as_of = date_cls.fromisoformat(as_of_iso)
@@ -60,7 +75,7 @@ def _load(settings: Settings, as_of: str | None) -> GoldTables:
         )
     try:
         resolved = infer_as_of_from_value(as_of, sample_dir)
-        return _gold_cached(str(sample_dir), resolved.isoformat())
+        return _gold_cached(str(sample_dir), resolved.isoformat(), _source_fingerprint(str(sample_dir)))
     except CsvGoldError as exc:
         raise HTTPException(
             status_code=400 if "as_of" in str(exc) else 503,
@@ -139,6 +154,8 @@ def get_kpi(
 
 class ChatRequest(BaseModel):
     question: str = Field(min_length=1, max_length=500)
+    as_of: str | None = Field(default=None, description="Optional ISO date YYYY-MM-DD.")
+    period: str | None = Field(default=None, description="Optional KPI period: all, rolling_12m, or latest_month.")
 
 
 @app.post("/chat")
@@ -151,5 +168,14 @@ def chat(request: ChatRequest) -> dict[str, Any]:
             detail="Question must not be empty.",
         )
 
-    gold = _load(get_settings(), None)
-    return answer_question(question, gold)
+    if request.period is not None and request.period not in {"all", "rolling_12m", "latest_month"}:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_period",
+                "message": "period must be one of: all, rolling_12m, latest_month.",
+            },
+        )
+
+    gold = _load(get_settings(), request.as_of)
+    return answer_question(question, gold, period=request.period)
