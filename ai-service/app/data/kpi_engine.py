@@ -188,7 +188,7 @@ def compute_kpi(name: str, gold: GoldTables, period: str | None = None) -> KpiRe
     notes: list[str] = []
     if name in {
         "hires", "exits", "net_headcount_change", "average_headcount",
-        "attrition_pct", "attrition_pct_rolling_12m",
+        "attrition_pct", "attrition_pct_rolling_12m", "headcount",
     }:
         coverage_note = _missing_snapshot_note(hc, months)
         if coverage_note:
@@ -203,11 +203,23 @@ def compute_kpi(name: str, gold: GoldTables, period: str | None = None) -> KpiRe
         numerator = value
     elif name == "headcount":
         latest = gold.headcount_monthly
-        if latest.empty:
-            value = 0
+        last = month_end(gold.as_of)
+        observed_months = (
+            set(pd.to_datetime(latest["month_end"]).dt.date)
+            if not latest.empty else set()
+        )
+        if last not in observed_months:
+            # Missing snapshot is unknown, not a genuine zero headcount.
+            value = None
+            notes.append(
+                f"Missing monthly headcount snapshot for {last.isoformat()}; "
+                "headcount is unknown and is not reported as zero."
+            )
         else:
-            last = month_end(gold.as_of)
-            slice_ = latest.loc[(latest["month_end"] == last) & (latest["is_month_end_active"])]
+            slice_ = latest.loc[
+                (pd.to_datetime(latest["month_end"]).dt.date == last)
+                & (latest["is_month_end_active"])
+            ]
             value = int(slice_["employee_id"].nunique())
         numerator = value
         resolved_period = "latest_month"
