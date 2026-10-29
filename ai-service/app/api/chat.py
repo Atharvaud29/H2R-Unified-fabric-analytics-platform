@@ -21,7 +21,7 @@ QUESTION_MAP = {
     "avg_time_to_hire_days": ["time to hire", "average time to hire"],
     "avg_time_to_fill_days": ["time to fill", "average time to fill"],
 }
-def answer_question(question: str, gold: Any) -> dict[str, Any]:
+def answer_question(question: str, gold: Any, period: str | None = None) -> dict[str, Any]:
     """Answer a supported question using calculated KPI evidence."""
     normalized = " ".join(question.lower().strip().rstrip("?.!").split())
     if not normalized:
@@ -50,7 +50,7 @@ def answer_question(question: str, gold: Any) -> dict[str, Any]:
         }
     _, kpi_name, matched_phrase = max(candidates)
     from app.data.kpi_engine import compute_kpi
-    result = compute_kpi(kpi_name, gold)
+    result = compute_kpi(kpi_name, gold, period=period)
     if result.value is None:
         message = (
             f"{result.display_name} is unavailable for the selected data "
