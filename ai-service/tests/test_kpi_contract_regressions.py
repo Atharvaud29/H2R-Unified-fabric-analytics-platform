@@ -150,3 +150,29 @@ def test_all_period_attrition_contract(gold_with_controlled_months):
     assert result.value == pytest.approx(0.3)
     assert result.unit == "ratio"
     assert result.denominator_zero is False
+
+
+def test_rolling_12m_attrition_reports_missing_month_snapshot(
+    gold_with_controlled_months,
+):
+    rows = [
+        row
+        for row in _monthly_headcount_rows()
+        if row["month_end"] != date(2024, 5, 31)
+    ]
+    gold_with_controlled_months.headcount_monthly = pd.DataFrame(rows)
+
+    result = compute_kpi(
+        "attrition_pct_rolling_12m", gold_with_controlled_months
+    )
+
+    # Jan-Dec 2024 remains the 12-month window; May is missing, not zero.
+    assert result.period == "rolling_12m"
+    assert result.numerator == 2
+    assert result.denominator == pytest.approx(10.0)
+    assert result.value == pytest.approx(0.2)
+    assert any(
+        "2024-05-31" in note and "not treated as zero" in note
+        for note in result.notes
+    )
+
