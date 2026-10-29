@@ -188,7 +188,7 @@ def compute_kpi(name: str, gold: GoldTables, period: str | None = None) -> KpiRe
     notes: list[str] = []
     if name in {
         "hires", "exits", "net_headcount_change", "average_headcount",
-        "attrition_pct", "attrition_pct_rolling_12m", "headcount",
+        "attrition_pct", "attrition_pct_rolling_12m",
     }:
         coverage_note = _missing_snapshot_note(hc, months)
         if coverage_note:
