@@ -83,3 +83,42 @@ def test_rate_api_contract_keeps_ratio_not_percent_points(gold_with_controlled_m
     assert result.unit == "ratio"
     assert result.value == pytest.approx(0.2)
     assert result.as_dict()["value"] == pytest.approx(0.2)
+
+
+def test_average_headcount_uses_distinct_employees_per_observed_month(
+    gold_with_controlled_months,
+):
+    rows: list[dict[str, object]] = []
+    for month_key, count in (("202410", 10), ("202411", 20), ("202412", 30)):
+        month_end = pd.Timestamp(f"{month_key[:4]}-{month_key[4:]}-01") + pd.offsets.MonthEnd(0)
+        for index in range(count):
+            rows.append(
+                {
+                    "month_end": month_end.date(),
+                    "employee_id": f"{month_key}_E{index:03d}",
+                    "is_new_hire": False,
+                    "is_exit": False,
+                    "is_month_end_active": True,
+                }
+            )
+    gold_with_controlled_months.headcount_monthly = pd.DataFrame(rows)
+
+    result = compute_kpi(
+        "average_headcount", gold_with_controlled_months, period="all"
+    )
+
+    # Monthly headcounts are 10, 20 and 30; average is 20 across 3 observed months.
+    assert result.value == pytest.approx(20.0)
+    assert result.numerator == pytest.approx(20.0)
+    assert result.denominator == 3
+    assert result.denominator_zero is False
+
+
+def test_latest_month_headcount_uses_as_of_month_end(gold_with_controlled_months):
+    result = compute_kpi(
+        "headcount", gold_with_controlled_months, period="latest_month"
+    )
+
+    assert result.value == 10
+    assert result.period == "latest_month"
+
