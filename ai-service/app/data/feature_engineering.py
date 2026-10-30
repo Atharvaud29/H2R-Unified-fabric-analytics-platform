@@ -100,6 +100,25 @@ def build_attrition_dataset(gold: GoldTables, horizon_days: int = 90) -> pd.Data
     exits["_exit_date"] = _as_date_series(exits["last_working_date"])
     exits = exits.loc[exits["_exit_date"].notna()].copy()
 
+    eligible_snapshots = hc.loc[hc["_snapshot_date"].isin(snapshots), ["employee_id", "_snapshot_date"]].copy()
+    eligible_snapshots["employee_id"] = eligible_snapshots["employee_id"].astype(str).str.strip()
+    eligible_snapshots = eligible_snapshots.loc[
+        eligible_snapshots["employee_id"].isin(employee_lookup.index)
+    ].drop_duplicates()
+    point_in_time_keys = eligible_snapshots.rename(columns={"_snapshot_date": "snapshot_date"})
+    try:
+        resolved_history = point_in_time_employee_attributes(point_in_time_keys, gold.employee_history)
+    except EmployeeHistoryError as exc:
+        raise FeatureEngineeringError("Point-in-time employee history resolution failed: " + str(exc)) from exc
+    history_lookup = {
+        (str(row.employee_id), row.snapshot_date): {
+            column: getattr(row, column) for column in (
+                "department_id", "location_id", "grade_id", "employment_type", "work_mode"
+            )
+        }
+        for row in resolved_history.itertuples(index=False)
+    }
+
     rows: list[dict[str, Any]] = []
     for snapshot in snapshots:
         horizon_end = snapshot + timedelta(days=horizon_days)
@@ -110,13 +129,6 @@ def build_attrition_dataset(gold: GoldTables, horizon_days: int = 90) -> pd.Data
         active_ids = [key for key in active_ids if key in employee_lookup.index]
         if not active_ids:
             continue
-
-        snapshot_keys = pd.DataFrame({"employee_id": active_ids, "snapshot_date": snapshot.isoformat()})
-        try:
-            historical_attributes = point_in_time_employee_attributes(snapshot_keys, gold.employee_history)
-        except EmployeeHistoryError as exc:
-            raise FeatureEngineeringError("Point-in-time employee history resolution failed: " + str(exc)) from exc
-        attribute_lookup = historical_attributes.set_index("employee_id").to_dict("index")
 
         future_exits = exits.loc[
             (exits["_exit_date"] > snapshot) & (exits["_exit_date"] <= horizon_end),
@@ -135,11 +147,11 @@ def build_attrition_dataset(gold: GoldTables, horizon_days: int = 90) -> pd.Data
             rows.append({
                 "employee_id": employee_id,
                 "snapshot_date": snapshot.isoformat(),
-                "department_id": _categorical_value(attribute_lookup[employee_id]["department_id"]),
-                "location_id": _categorical_value(attribute_lookup[employee_id]["location_id"]),
-                "grade_id": _categorical_value(attribute_lookup[employee_id]["grade_id"]),
-                "employment_type": _categorical_value(attribute_lookup[employee_id]["employment_type"]),
-                "work_mode": _categorical_value(attribute_lookup[employee_id]["work_mode"]),
+                "department_id": _categorical_value(history_lookup[(employee_id, snapshot)]["department_id"]),
+                "location_id": _categorical_value(history_lookup[(employee_id, snapshot)]["location_id"]),
+                "grade_id": _categorical_value(history_lookup[(employee_id, snapshot)]["grade_id"]),
+                "employment_type": _categorical_value(history_lookup[(employee_id, snapshot)]["employment_type"]),
+                "work_mode": _categorical_value(history_lookup[(employee_id, snapshot)]["work_mode"]),
                 "tenure_months": _completed_months(hire_date.date(), snapshot),
                 "hire_month": int(hire_date.month),
                 "snapshot_month": int(snapshot.month),
