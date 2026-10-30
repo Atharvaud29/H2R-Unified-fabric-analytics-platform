@@ -122,6 +122,9 @@ def validate_point_in_time_dataset(
         try:
             expected_history = point_in_time_employee_attributes(keys, history)
             actual = dataset.loc[:, ["employee_id", "snapshot_date", *ATTRIBUTE_COLUMNS]].copy()
+            # Feature datasets serialize snapshot_date as ISO text; normalize it to
+            # the same Python date type returned by the bitemporal resolver.
+            actual["snapshot_date"] = snapshot_dates
             expected = expected_history
             merged = actual.merge(
                 expected,
