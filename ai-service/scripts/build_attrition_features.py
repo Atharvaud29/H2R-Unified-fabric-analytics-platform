@@ -48,6 +48,14 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.hris_history_path is not None:
+        if args.sample_data_dir is None or not args.sample_data_dir.is_absolute():
+            print("Governed HRIS mode requires --sample-data-dir as an absolute path to approved protected Gold-equivalent CSV exports.")
+            return 2
+        if _is_within(args.sample_data_dir, REPO_ROOT):
+            print("Governed HRIS mode cannot use repository/sample-data Gold inputs; supply approved protected Gold-equivalent exports.")
+            return 2
+
     sample_data_dir = args.sample_data_dir or Settings().resolved_sample_data_dir()
     as_of = infer_as_of_from_value(args.as_of, sample_data_dir)
     gold = load_gold(sample_data_dir, as_of=as_of)
