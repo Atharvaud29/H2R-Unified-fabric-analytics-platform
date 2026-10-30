@@ -128,9 +128,13 @@ def point_in_time_employee_attributes(
         raise EmployeeHistoryError("Duplicate employee snapshot keys were detected.")
 
     matches = []
+    history_by_employee = {
+        str(employee_id): group
+        for employee_id, group in normalized.groupby("employee_id", sort=False)
+    }
     for snapshot in source.itertuples(index=False):
         cutoff = pd.Timestamp(datetime.combine(snapshot.snapshot_date, time.max), tz="UTC")
-        rows = normalized.loc[normalized["employee_id"] == snapshot.employee_id]
+        rows = history_by_employee.get(str(snapshot.employee_id), normalized.iloc[0:0])
         selected = rows.loc[
             rows["effective_start_date"].le(snapshot.snapshot_date)
             & (
