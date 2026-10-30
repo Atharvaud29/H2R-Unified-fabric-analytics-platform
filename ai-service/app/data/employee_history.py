@@ -33,7 +33,11 @@ def normalize_employee_history(history: pd.DataFrame) -> pd.DataFrame:
         out[column] = parsed.map(lambda value: None if pd.isna(value) else value.date()).astype(object)
     out["recorded_at"] = _timestamp(out["recorded_at"], "recorded_at")
     out["superseded_at"] = _timestamp(out["superseded_at"], "superseded_at", nullable=True)
-    bad_valid = pd.Series(\n        [end is not None and end <= start for start, end in zip(out["effective_start_date"], out["effective_end_date"])],\n        index=out.index,\n    )\n    bad_system = out["superseded_at"].notna() & (out["superseded_at"] <= out["recorded_at"])
+    bad_valid = pd.Series(
+        [end is not None and end <= start for start, end in zip(out["effective_start_date"], out["effective_end_date"])],
+        index=out.index,
+    )
+    bad_system = out["superseded_at"].notna() & (out["superseded_at"] <= out["recorded_at"])
     if bad_valid.any():
         raise EmployeeHistoryError("effective_end_date must be later than effective_start_date (exclusive end).")
     if bad_system.any():
