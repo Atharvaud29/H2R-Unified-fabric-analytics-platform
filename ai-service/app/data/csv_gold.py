@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 import pandas as pd
+
+from app.data.employee_history import EmployeeHistoryError, validate_employee_history
 REQUIRED_FILES = (
     "hris_employees.csv",
     "hris_departments.csv",
@@ -33,6 +35,7 @@ class GoldTables:
     headcount_monthly: pd.DataFrame
     recruitment: pd.DataFrame
     exits: pd.DataFrame
+    employee_history: pd.DataFrame | None = None
 def month_end(d: date) -> date:
     if d.month == 12:
         nxt = date(d.year + 1, 1, 1)
@@ -270,6 +273,15 @@ def load_gold(sample_data_dir: Path, as_of: date | None = None) -> GoldTables:
     )
     exits = fact_exit(_read_csv(sample_data_dir, "hris_exits.csv"), employees)
     headcount = fact_headcount_monthly(employees, as_of)
+    history_path = sample_data_dir / "hris_employee_history_synthetic.csv"
+    employee_history = None
+    if history_path.exists():
+        employee_history = _normalise_columns(pd.read_csv(history_path))
+        if "source_type" not in employee_history.columns or not employee_history["source_type"].eq("synthetic_demo").all():
+            raise CsvGoldError("The demo history source must explicitly identify every row as synthetic_demo.")
+        report = validate_employee_history(employee_history)
+        if report["status"] != "pass":
+            raise CsvGoldError("Employee history failed bitemporal validation: " + "; ".join(report["errors"]))
     return GoldTables(
         as_of=as_of,
         employees=employees,
@@ -277,6 +289,7 @@ def load_gold(sample_data_dir: Path, as_of: date | None = None) -> GoldTables:
         headcount_monthly=headcount,
         recruitment=recruitment,
         exits=exits,
+        employee_history=employee_history,
     )
 def infer_as_of_from_value(value: str | date | datetime | None, sample_data_dir: Path) -> date:
     if value is None:

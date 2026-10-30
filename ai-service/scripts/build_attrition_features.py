@@ -34,6 +34,9 @@ def main() -> int:
     sample_data_dir = args.sample_data_dir or Settings().resolved_sample_data_dir()
     as_of = infer_as_of_from_value(args.as_of, sample_data_dir)
     gold = load_gold(sample_data_dir, as_of=as_of)
+    if gold.employee_history is None:
+        print("Employee history source missing. Run: python scripts/generate_synthetic_employee_history.py")
+        return 2
     dataset = build_attrition_dataset(gold, horizon_days=args.horizon_days)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)

@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from app.data.csv_gold import GoldTables
+from app.data.employee_history import ATTRIBUTE_COLUMNS
 from app.data.feature_engineering import (
     DATASET_COLUMNS,
     MODEL_FEATURE_COLUMNS,
@@ -51,6 +52,10 @@ def _gold() -> GoldTables:
         {"employee_id": "E001", "last_working_date": date(2024, 3, 15)},
         {"employee_id": "E002", "last_working_date": date(2024, 5, 1)},
     ])
+    history = pd.DataFrame([
+        {"employee_id": "E001", "effective_start_date": "2023-01-15", "effective_end_date": None, "recorded_at": "2023-01-15T00:00:00Z", "superseded_at": None, "department_id": "D01", "location_id": "L01", "grade_id": "G2", "employment_type": "Full-Time", "work_mode": "Hybrid", "source_type": "synthetic_demo"},
+        {"employee_id": "E002", "effective_start_date": "2023-06-10", "effective_end_date": None, "recorded_at": "2023-06-10T00:00:00Z", "superseded_at": None, "department_id": "D02", "location_id": "L02", "grade_id": "G3", "employment_type": "Contract", "work_mode": "Remote", "source_type": "synthetic_demo"},
+    ])
     return GoldTables(
         as_of=date(2024, 12, 31),
         employees=employees,
@@ -58,6 +63,7 @@ def _gold() -> GoldTables:
         headcount_monthly=headcount,
         recruitment=pd.DataFrame(),
         exits=exits,
+        employee_history=history,
     )
 
 
@@ -119,3 +125,10 @@ def test_summary_contains_aggregate_counts_only():
     assert summary["positive_rows"] == int(dataset[TARGET_COLUMN].sum())
     assert summary["positive_rows"] + summary["negative_rows"] == summary["row_count"]
     assert "employee_id" not in summary
+
+
+def test_requires_history_instead_of_current_state_fallback():
+    gold = _gold()
+    gold.employee_history = None
+    with pytest.raises(FeatureEngineeringError, match="current-state fallback is disabled"):
+        build_attrition_dataset(gold, horizon_days=90)
