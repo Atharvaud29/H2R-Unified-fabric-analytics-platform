@@ -1,8 +1,7 @@
-"""Strict adapter for an approved, effective-dated HRIS history extract.
+"""Strict validation for approved, effective-dated HRIS history extracts.
 
-This adapter deliberately accepts only the canonical, governed CSV contract.
-It does not infer history from current-state employee records and never
-manufactures missing history values.
+The DataFrame validator is shared by file-based and live source adapters. It
+accepts only the canonical, governed contract and never infers missing history.
 """
 from __future__ import annotations
 
@@ -19,10 +18,6 @@ from app.data.employee_history import (
 )
 
 
-class HrisHistorySourceError(ValueError):
-    """Raised when an HRIS history extract violates the governed source contract."""
-
-
 SOURCE_METADATA_COLUMNS = (
     "source_system",
     "source_record_id",
@@ -32,16 +27,17 @@ SOURCE_METADATA_COLUMNS = (
 REQUIRED_HRIS_HISTORY_COLUMNS = (*HISTORY_COLUMNS, *SOURCE_METADATA_COLUMNS)
 
 
-def load_governed_hris_history(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Load and validate an approved HRIS history CSV; return normalized history + aggregate report."""
-    source_path = Path(path)
-    if not source_path.is_file():
-        raise HrisHistorySourceError("Configured HRIS history file does not exist.")
-    try:
-        raw = pd.read_csv(source_path, dtype="string")
-    except (OSError, UnicodeError, pd.errors.ParserError) as exc:
-        raise HrisHistorySourceError("HRIS history extract could not be read as a CSV.") from exc
+class HrisHistorySourceError(ValueError):
+    """Raised when an HRIS history extract violates the governed source contract."""
 
+
+def validate_governed_hris_history_frame(
+    frame: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Validate a source DataFrame and return canonical history plus aggregate diagnostics."""
+    if not isinstance(frame, pd.DataFrame):
+        raise HrisHistorySourceError("HRIS source must return a pandas DataFrame.")
+    raw = frame.copy()
     raw.columns = [str(column).strip().lower().replace(" ", "_") for column in raw.columns]
     missing = sorted(set(REQUIRED_HRIS_HISTORY_COLUMNS).difference(raw.columns))
     if missing:
@@ -73,7 +69,6 @@ def load_governed_hris_history(path: Path) -> tuple[pd.DataFrame, dict[str, Any]
         raise HrisHistorySourceError("All rows in one extract must share the same extracted_at timestamp.")
 
     history = raw.loc[:, list(HISTORY_COLUMNS)].copy()
-    history["source_type"] = "hris_production"
     try:
         report = validate_employee_history(history)
     except EmployeeHistoryError as exc:
@@ -92,3 +87,15 @@ def load_governed_hris_history(path: Path) -> tuple[pd.DataFrame, dict[str, Any]
         "employee_level_values_emitted": False,
     })
     return history, report
+
+
+def load_governed_hris_history(path: Path) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Load and validate an approved HRIS history CSV; return normalized history + aggregate report."""
+    source_path = Path(path)
+    if not source_path.is_file():
+        raise HrisHistorySourceError("Configured HRIS history file does not exist.")
+    try:
+        raw = pd.read_csv(source_path, dtype="string")
+    except (OSError, UnicodeError, pd.errors.ParserError) as exc:
+        raise HrisHistorySourceError("HRIS history extract could not be read as a CSV.") from exc
+    return validate_governed_hris_history_frame(raw)
