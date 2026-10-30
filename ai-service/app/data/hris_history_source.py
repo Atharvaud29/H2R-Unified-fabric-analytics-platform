@@ -80,7 +80,7 @@ def load_governed_hris_history(path: Path) -> tuple[pd.DataFrame, dict[str, Any]
         raise HrisHistorySourceError("HRIS bitemporal history validation failed: " + str(exc)) from exc
     if report["status"] != "pass":
         raise HrisHistorySourceError(
-            "HRIS bitemporal history contains overlapping versions."
+            "HRIS bitemporal history validation failed: overlapping versions detected."
         )
 
     report.update({
