@@ -30,11 +30,10 @@ def normalize_employee_history(history: pd.DataFrame) -> pd.DataFrame:
         parsed = pd.to_datetime(out[column], errors="coerce")
         if column == "effective_start_date" and parsed.isna().any():
             raise EmployeeHistoryError("effective_start_date contains missing or invalid dates.")
-        out[column] = parsed.dt.date
+        out[column] = parsed.map(lambda value: None if pd.isna(value) else value.date()).astype(object)
     out["recorded_at"] = _timestamp(out["recorded_at"], "recorded_at")
     out["superseded_at"] = _timestamp(out["superseded_at"], "superseded_at", nullable=True)
-    bad_valid = out["effective_end_date"].notna() & (out["effective_end_date"] <= out["effective_start_date"])
-    bad_system = out["superseded_at"].notna() & (out["superseded_at"] <= out["recorded_at"])
+    bad_valid = pd.Series(\n        [end is not None and end <= start for start, end in zip(out["effective_start_date"], out["effective_end_date"])],\n        index=out.index,\n    )\n    bad_system = out["superseded_at"].notna() & (out["superseded_at"] <= out["recorded_at"])
     if bad_valid.any():
         raise EmployeeHistoryError("effective_end_date must be later than effective_start_date (exclusive end).")
     if bad_system.any():
@@ -54,10 +53,10 @@ def validate_employee_history(history: pd.DataFrame) -> dict[str, Any]:
     for _, group in normalized.groupby("employee_id"):
         rows = group.to_dict("records")
         for index, left in enumerate(rows):
-            left_valid_end = left["effective_end_date"] or date.max
+            left_valid_end = left["effective_end_date"] if left["effective_end_date"] is not None else date.max
             left_system_end = left["superseded_at"] or pd.Timestamp.max.tz_localize("UTC")
             for right in rows[index + 1:]:
-                right_valid_end = right["effective_end_date"] or date.max
+                right_valid_end = right["effective_end_date"] if right["effective_end_date"] is not None else date.max
                 right_system_end = right["superseded_at"] or pd.Timestamp.max.tz_localize("UTC")
                 valid_overlap = left["effective_start_date"] < right_valid_end and right["effective_start_date"] < left_valid_end
                 system_overlap = left["recorded_at"] < right_system_end and right["recorded_at"] < left_system_end
