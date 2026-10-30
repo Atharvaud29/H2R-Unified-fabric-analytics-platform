@@ -78,8 +78,6 @@ def test_detects_forward_label_tampering():
 def test_fails_closed_when_history_is_missing():
     gold = _gold()
     gold.employee_history = None
-    dataset = build_attrition_dataset(gold, horizon_days=90)
-
     # Feature generation itself is expected to fail before a dataset can be validated.
     # A hand-built empty dataset still receives an explicit missing-source diagnostic.
     empty = pd.DataFrame(columns=[
