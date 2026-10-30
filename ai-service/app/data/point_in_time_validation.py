@@ -68,7 +68,7 @@ def validate_point_in_time_dataset(
     if duplicate_keys:
         errors.append("Duplicate employee-month keys were detected.")
 
-    null_feature_count = int(dataset.loc[:, MODEL_FEATURE_COLUMNS].isna().sum().sum())
+    null_feature_count = int(dataset.loc[:, list(MODEL_FEATURE_COLUMNS)].isna().sum().sum())
     if null_feature_count:
         errors.append("Null values remain in model features.")
 
@@ -118,6 +118,7 @@ def validate_point_in_time_dataset(
     history_mismatch_count = 0
     if history is not None and invalid_snapshot_count == 0 and row_count:
         keys = dataset.loc[:, ["employee_id", "snapshot_date"]].copy()
+        keys["snapshot_date"] = snapshot_dates
         try:
             expected_history = point_in_time_employee_attributes(keys, history)
             actual = dataset.loc[:, ["employee_id", "snapshot_date", *ATTRIBUTE_COLUMNS]].copy()
