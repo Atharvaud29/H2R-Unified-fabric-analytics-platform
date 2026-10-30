@@ -7,6 +7,7 @@ from typing import Any
 import pandas as pd
 
 from app.data.csv_gold import GoldTables
+from app.data.employee_history import EmployeeHistoryError, point_in_time_employee_attributes
 
 # Identifiers are metadata only. Sensitive/protected attributes and direct
 # identifiers are deliberately excluded from the model input contract.
@@ -83,6 +84,11 @@ def build_attrition_dataset(gold: GoldTables, horizon_days: int = 90) -> pd.Data
     )
     if not snapshots:
         return pd.DataFrame(columns=DATASET_COLUMNS)
+    if gold.employee_history is None:
+        raise FeatureEngineeringError(
+            "Employee history source is required. Generate sample-data/hris_employee_history_synthetic.csv "
+            "with scripts/generate_synthetic_employee_history.py; current-state fallback is disabled."
+        )
 
     employees = gold.employees.copy()
     employees["employee_id"] = employees["employee_id"].astype(str).str.strip()
@@ -105,6 +111,13 @@ def build_attrition_dataset(gold: GoldTables, horizon_days: int = 90) -> pd.Data
         if not active_ids:
             continue
 
+        snapshot_keys = pd.DataFrame({"employee_id": active_ids, "snapshot_date": snapshot.isoformat()})
+        try:
+            historical_attributes = point_in_time_employee_attributes(snapshot_keys, gold.employee_history)
+        except EmployeeHistoryError as exc:
+            raise FeatureEngineeringError("Point-in-time employee history resolution failed: " + str(exc)) from exc
+        attribute_lookup = historical_attributes.set_index("employee_id").to_dict("index")
+
         future_exits = exits.loc[
             (exits["_exit_date"] > snapshot) & (exits["_exit_date"] <= horizon_end),
             "employee_id",
@@ -122,11 +135,11 @@ def build_attrition_dataset(gold: GoldTables, horizon_days: int = 90) -> pd.Data
             rows.append({
                 "employee_id": employee_id,
                 "snapshot_date": snapshot.isoformat(),
-                "department_id": _categorical_value(employee.get("department_id")),
-                "location_id": _categorical_value(employee.get("location_id")),
-                "grade_id": _categorical_value(employee.get("grade_id")),
-                "employment_type": _categorical_value(employee.get("employment_type")),
-                "work_mode": _categorical_value(employee.get("work_mode")),
+                "department_id": _categorical_value(attribute_lookup[employee_id]["department_id"]),
+                "location_id": _categorical_value(attribute_lookup[employee_id]["location_id"]),
+                "grade_id": _categorical_value(attribute_lookup[employee_id]["grade_id"]),
+                "employment_type": _categorical_value(attribute_lookup[employee_id]["employment_type"]),
+                "work_mode": _categorical_value(attribute_lookup[employee_id]["work_mode"]),
                 "tenure_months": _completed_months(hire_date.date(), snapshot),
                 "hire_month": int(hire_date.month),
                 "snapshot_month": int(snapshot.month),
