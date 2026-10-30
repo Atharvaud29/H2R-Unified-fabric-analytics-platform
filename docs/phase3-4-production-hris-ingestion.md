@@ -32,13 +32,14 @@ From `ai-service`, after mounting the approved extract and approved output stora
 
 ```bash
 python scripts/build_attrition_features.py \
+  --sample-data-dir /secure/gold-equivalent-csv-export \
   --hris-history-path /secure/hris/hris_employee_history.csv \
   --as-of 2026-09-30 \
   --horizon-days 90 \
   --output /secure/ai-artifacts/attrition_training_dataset.csv
 ```
 
-The production mode rejects an output path that is relative or resolves inside this Git repository. The secure mount, encryption, access controls, retention, and audit logging must be provided by the deployment environment.
+Governed HRIS mode also requires `--sample-data-dir` to point to an absolute protected directory containing the approved Gold-equivalent CSV inputs (employees, departments, exits, ATS candidates, and requisitions). It rejects repository/sample-data inputs, so production history cannot accidentally be combined with the repository's synthetic employee/exit tables. It also rejects an output path that is relative or resolves inside this Git repository. The secure mounts, encryption, access controls, retention, and audit logging must be provided by the deployment environment.
 
 ## Source boundary and reconciliation
 
