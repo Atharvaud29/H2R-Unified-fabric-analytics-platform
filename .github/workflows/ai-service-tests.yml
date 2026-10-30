@@ -38,5 +38,5 @@ jobs:
         run: pytest -q
       - name: Generate labelled synthetic employee history
         run: python scripts/generate_synthetic_employee_history.py
-      - name: Execute and validate the sample-data attrition dataset
-        run: python scripts/validate_attrition_dataset.py --horizon-days 90 --report-json artifacts/attrition_dataset_validation.json
+      - name: Execute and validate the point-in-time attrition dataset
+        run: python scripts/validate_point_in_time_dataset.py --horizon-days 90 --report-json artifacts/point_in_time_validation.json
