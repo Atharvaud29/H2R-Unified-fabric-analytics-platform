@@ -36,7 +36,9 @@ FORBIDDEN_MODEL_FIELDS = {
 }
 
 
-def validate_dataset(dataset: pd.DataFrame, as_of, horizon_days: int) -> dict[str, Any]:
+def validate_dataset(
+    dataset: pd.DataFrame, as_of, horizon_days: int, history_source_type: str = "unknown"
+) -> dict[str, Any]:
     errors: list[str] = []
     warnings: list[str] = []
 
@@ -115,13 +117,15 @@ def validate_dataset(dataset: pd.DataFrame, as_of, horizon_days: int) -> dict[st
         "forbidden_model_fields_present": forbidden_present,
         "errors": errors,
         "warnings": warnings,
+        "history_source_type": history_source_type,
         "historical_feature_warning": (
-            "Employee attributes are sourced from the current employee record, not an "
-            "effective-dated history. Historical department/location/grade/employment "
-            "features are therefore not point-in-time validated."
+            "History is synthetic demonstration data; it validates pipeline mechanics only and is not observed HRIS history."
+            if history_source_type == "synthetic_demo"
+            else "Confirm that the connected employee history is an approved, source-governed HRIS feed."
         ),
         "training_readiness": (
             "not_ready" if errors or not class_diversity or any(unknown_counts.values())
+            else "synthetic_demo_only_not_production_ready" if history_source_type == "synthetic_demo"
             else "technical_checks_pass_historical_review_required"
         ),
     }
@@ -140,7 +144,13 @@ def main() -> int:
     as_of = infer_as_of_from_value(args.as_of, sample_data_dir)
     gold = load_gold(sample_data_dir, as_of=as_of)
     dataset = build_attrition_dataset(gold, horizon_days=args.horizon_days)
-    report = validate_dataset(dataset, as_of, args.horizon_days)
+    history_source_type = (
+        str(gold.employee_history["source_type"].dropna().iloc[0])
+        if gold.employee_history is not None and "source_type" in gold.employee_history.columns
+        and not gold.employee_history["source_type"].dropna().empty
+        else "unknown"
+    )
+    report = validate_dataset(dataset, as_of, args.horizon_days, history_source_type)
 
     rendered = json.dumps(report, indent=2)
     print(rendered)
